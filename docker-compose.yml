@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  # MySQL Database Service
+  mysql:
+    image: mysql:8.0
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: allocsmart
+      MYSQL_USER: allocsmart_user
+      MYSQL_PASSWORD: allocsmart_password
+    ports:
+      - "3308:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "5002:5000" # Map host port 5002 to container port 5000
+    volumes:
+      # Mount .env file for secrets (adjust path if needed)
+      - ./.env:/app/.env
+    environment:
+      # Database configuration for MySQL
+      SQLALCHEMY_DATABASE_URI: mysql+pymysql://allocsmart_user:allocsmart_password@mysql:3306/allocsmart
+      FLASK_APP: run.py
+      FLASK_ENV: development
+      PYTHONUNBUFFERED: 1 # Ensures print statements appear in logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      # Pass the backend URL accessible from the host during build
+      args:
+        VITE_API_BASE_URL: http://localhost:5002
+    ports:
+      - "5174:80" # Map host port 5174 to container port 80 (Nginx)
+    # depends_on:
+    #   - backend # Optional: ensures backend starts before frontend (useful if using proxy)
+
+volumes:
+  # MySQL data volume for persistence
+  mysql_data:
+    driver: local
+
+# Define networks if needed for service discovery (e.g., if using proxy)
+# networks:
+#   app_network:
+#     driver: bridge
